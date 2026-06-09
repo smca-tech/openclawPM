@@ -8,7 +8,7 @@ import {
 } from "../channels/plugins/native-approval-prompt.js";
 import type { SubagentDelegationMode } from "../config/types.agent-defaults.js";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
-import { buildMemoryPromptSection } from "../plugins/memory-state.js";
+import { buildStaticMemoryPromptSection } from "../plugins/memory-state.js";
 import type { AgentPromptSurfaceKind } from "../plugins/types.js";
 import {
   normalizeLowercaseStringOrEmpty,
@@ -261,13 +261,22 @@ function buildMemorySection(params: {
   includeMemorySection?: boolean;
   availableTools: Set<string>;
   citationsMode?: MemoryCitationsMode;
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  sessionKey?: string;
 }) {
   if (params.isMinimal || params.includeMemorySection === false) {
     return [];
   }
-  return buildMemoryPromptSection({
+  // Memory prompt assembly now supports async builders elsewhere, but the main
+  // system prompt path remains synchronous for broad compatibility.
+  // This path intentionally keeps only synchronously-available prompt lines.
+  return buildStaticMemoryPromptSection({
     availableTools: params.availableTools,
     citationsMode: params.citationsMode,
+    cfg: params.cfg,
+    agentId: params.agentId,
+    sessionKey: params.sessionKey,
   });
 }
 
@@ -940,6 +949,9 @@ export function buildAgentSystemPrompt(params: {
     includeMemorySection: params.includeMemorySection,
     availableTools,
     citationsMode: params.memoryCitationsMode,
+    cfg: params.config,
+    agentId: params.activeAgentId,
+    sessionKey: params.sessionKey,
   });
   const docsSection = buildDocsSection({
     docsPath: params.docsPath,

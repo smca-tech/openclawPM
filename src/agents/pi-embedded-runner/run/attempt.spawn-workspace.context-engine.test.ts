@@ -1268,7 +1268,7 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
       assemble: async ({ messages, availableTools, citationsMode }) => ({
         messages,
         estimatedTokens: messages.length,
-        systemPromptAddition: buildMemorySystemPromptAddition({
+        systemPromptAddition: await buildMemorySystemPromptAddition({
           availableTools: availableTools ?? new Set(),
           citationsMode,
         }),

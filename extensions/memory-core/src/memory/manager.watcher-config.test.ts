@@ -79,6 +79,7 @@ import {
   closeAllMemorySearchManagers,
   getMemorySearchManager,
   type MemoryIndexManager,
+  type MemorySearchManager,
 } from "./index.js";
 import { registerBuiltInMemoryEmbeddingProviders } from "./provider-adapters.js";
 
@@ -203,6 +204,41 @@ describe("memory watcher config", () => {
     manager = result.manager as unknown as MemoryIndexManager;
 
     expect(watchMock).not.toHaveBeenCalled();
+  });
+
+  it("exposes warmSession on builtin managers and triggers session-start sync once per session key", async () => {
+    await setupWatcherWorkspace({ name: "notes.md", contents: "hello" });
+    const cfg = createWatcherConfig({
+      sync: { watch: false, watchDebounceMs: 25, onSessionStart: true, onSearch: false },
+    });
+
+    const result = await getMemorySearchManager({ cfg, agentId: "main" });
+    if (!result.manager) {
+      throw new Error("manager missing");
+    }
+    manager = result.manager as unknown as MemoryIndexManager;
+
+    const runtimeManager = result.manager as MemorySearchManager & {
+      warmSession?: (sessionKey?: string) => Promise<void>;
+    };
+    expect(runtimeManager.warmSession).toBeTypeOf("function");
+
+    const syncSpy = vi
+      .spyOn(
+        manager as unknown as {
+          sync: (params?: { reason?: string }) => Promise<void>;
+        },
+        "sync",
+      )
+      .mockResolvedValue(undefined);
+
+    await runtimeManager.warmSession?.("session-a");
+    await runtimeManager.warmSession?.("session-a");
+    await runtimeManager.warmSession?.("session-b");
+
+    expect(syncSpy).toHaveBeenCalledTimes(2);
+    expect(syncSpy).toHaveBeenNthCalledWith(1, { reason: "session-start" });
+    expect(syncSpy).toHaveBeenNthCalledWith(2, { reason: "session-start" });
   });
 
   it("watches multimodal extra directories with filtered extensions", async () => {

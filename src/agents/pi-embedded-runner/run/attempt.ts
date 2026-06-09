@@ -273,6 +273,7 @@ import { splitSdkTools } from "../tool-split.js";
 import { mapThinkingLevel } from "../utils.js";
 import { flushPendingToolResultsAfterIdle } from "../wait-for-idle-before-flush.js";
 import { abortable as abortableWithSignal } from "./abortable.js";
+import { warmEmbeddedSessionMemoryForRun } from "./attempt-memory-startup.js";
 import { createEmbeddedAgentSessionWithResourceLoader } from "./attempt-session.js";
 import {
   applyEmbeddedAttemptToolsAllow,
@@ -2090,6 +2091,12 @@ export async function runEmbeddedAttempt(
       });
 
       await prewarmSessionFile(params.sessionFile);
+      await warmEmbeddedSessionMemoryForRun({
+        config: params.config,
+        agentId: sessionAgentId,
+        sessionKey: params.sessionKey,
+        log,
+      });
       sessionManager = guardSessionManager(SessionManager.open(params.sessionFile), {
         agentId: sessionAgentId,
         sessionKey: params.sessionKey,
