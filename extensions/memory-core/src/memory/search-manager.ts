@@ -356,6 +356,10 @@ class BorrowedMemoryManager implements MemorySearchManager {
     return this.inner.status();
   }
 
+  async warmSession(sessionKey?: string) {
+    await this.inner.warmSession?.(sessionKey);
+  }
+
   async sync(params?: {
     reason?: string;
     force?: boolean;
@@ -513,6 +517,16 @@ class FallbackMemoryManager implements MemorySearchManager {
         fallback: { disabled: true, reason: this.lastError ?? "unknown" },
       },
     };
+  }
+
+  async warmSession(sessionKey?: string) {
+    this.ensureOpen();
+    if (!this.primaryFailed) {
+      await this.deps.primary.warmSession?.(sessionKey);
+      return;
+    }
+    const fallback = await this.ensureFallback();
+    await fallback?.warmSession?.(sessionKey);
   }
 
   async sync(params?: {

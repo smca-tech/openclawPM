@@ -5,7 +5,10 @@ import type { MemorySearchManager } from "../memory-host-sdk/host/types.js";
 export type MemoryPromptSectionBuilder = (params: {
   availableTools: Set<string>;
   citationsMode?: MemoryCitationsMode;
-}) => string[];
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  sessionKey?: string;
+}) => string[] | Promise<string[]>;
 
 export type MemoryCorpusSearchResult = {
   corpus: string;
@@ -213,17 +216,26 @@ export function registerMemoryPromptSupplement(
   memoryPluginState.promptSupplements = next;
 }
 
-export function buildMemoryPromptSection(params: {
+export async function buildMemoryPromptSection(params: {
   availableTools: Set<string>;
   citationsMode?: MemoryCitationsMode;
-}): string[] {
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  sessionKey?: string;
+}): Promise<string[]> {
   const primary = normalizeMemoryPromptLines(
-    memoryPluginState.capability?.capability.promptBuilder?.(params) ?? [],
+    (await memoryPluginState.capability?.capability.promptBuilder?.(params)) ?? [],
   );
-  const supplements = memoryPluginState.promptSupplements
-    // Keep supplement order stable even if plugin registration order changes.
-    .toSorted((left, right) => left.pluginId.localeCompare(right.pluginId))
-    .flatMap((registration) => normalizeMemoryPromptLines(registration.builder(params)));
+  const supplements = (
+    await Promise.all(
+      memoryPluginState.promptSupplements
+        // Keep supplement order stable even if plugin registration order changes.
+        .toSorted((left, right) => left.pluginId.localeCompare(right.pluginId))
+        .map(async (registration) =>
+          normalizeMemoryPromptLines(await registration.builder(params)),
+        ),
+    )
+  ).flat();
   return [...primary, ...supplements];
 }
 
@@ -232,6 +244,22 @@ function normalizeMemoryPromptLines(value: unknown): string[] {
     return [];
   }
   return value.filter((line): line is string => typeof line === "string");
+}
+
+export function buildStaticMemoryPromptSection(params: {
+  availableTools: Set<string>;
+  citationsMode?: MemoryCitationsMode;
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  sessionKey?: string;
+}): string[] {
+  const primary = normalizeMemoryPromptLines(
+    memoryPluginState.capability?.capability.promptBuilder?.(params),
+  );
+  const supplements = memoryPluginState.promptSupplements
+    .toSorted((left, right) => left.pluginId.localeCompare(right.pluginId))
+    .flatMap((registration) => normalizeMemoryPromptLines(registration.builder(params)));
+  return [...primary, ...supplements];
 }
 
 export function getMemoryPromptSectionBuilder(): MemoryPromptSectionBuilder | undefined {

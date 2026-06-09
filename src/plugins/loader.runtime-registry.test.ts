@@ -594,7 +594,7 @@ describe("resolveRuntimePluginRegistry", () => {
 });
 
 describe("clearPluginLoaderCache", () => {
-  it("resets registered memory plugin registries", () => {
+  it("resets registered memory plugin registries", async () => {
     registerMemoryEmbeddingProvider({
       id: "stale",
       create: async () => ({ provider: null }),
@@ -623,7 +623,7 @@ describe("clearPluginLoaderCache", () => {
         },
       },
     });
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual([
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
       "stale memory section",
       "stale wiki supplement",
     ]);
@@ -636,7 +636,9 @@ describe("clearPluginLoaderCache", () => {
 
     clearPluginLoaderCache();
 
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toStrictEqual([]);
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toStrictEqual(
+      [],
+    );
     expect(listMemoryCorpusSupplements()).toStrictEqual([]);
     expect(resolveMemoryFlushPlan({})).toBeNull();
     expect(getMemoryRuntime()).toBeUndefined();
@@ -664,7 +666,7 @@ describe("loadOpenClawPlugins active runtime clearing", () => {
 });
 
 describe("clearPluginRegistryLoadCache", () => {
-  it("preserves plugin-owned runtime registries while invalidating load snapshots", () => {
+  it("preserves plugin-owned runtime registries while invalidating load snapshots", async () => {
     registerMemoryEmbeddingProvider({
       id: "still-live",
       create: async () => ({ provider: null }),
@@ -675,7 +677,9 @@ describe("clearPluginRegistryLoadCache", () => {
 
     clearPluginRegistryLoadCache();
 
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual(["still live"]);
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
+      "still live",
+    ]);
     expect(requireMemoryEmbeddingProvider("still-live").id).toBe("still-live");
   });
 

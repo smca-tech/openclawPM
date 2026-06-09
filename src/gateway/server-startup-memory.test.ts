@@ -34,6 +34,14 @@ function createQmdManagerMock() {
   };
 }
 
+function createBuiltinManagerMock() {
+  return {
+    search: vi.fn(),
+    warmSession: vi.fn(async () => undefined),
+    close: vi.fn(async () => undefined),
+  };
+}
+
 describe("startGatewayMemoryBackend", () => {
   beforeEach(() => {
     getMemorySearchManagerMock.mockClear();
@@ -193,5 +201,73 @@ describe("startGatewayMemoryBackend", () => {
     expect(getMemorySearchManagerMock).not.toHaveBeenCalled();
     expect(log.info).not.toHaveBeenCalled();
     expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("warms builtin memory on gateway startup for eagerly started agents", async () => {
+    const cfg = {
+      agents: {
+        list: [{ id: "main", default: true }],
+        defaults: {
+          memorySearch: {
+            enabled: true,
+            provider: "openai",
+            model: "text-embedding-3-small",
+            store: { path: "/tmp/index.sqlite", vector: { enabled: false } },
+            sync: { watch: false, onSessionStart: true, onSearch: false },
+            query: { minScore: 0, hybrid: { enabled: false } },
+            sources: ["memory"],
+            experimental: { sessionMemory: false },
+          },
+        },
+      },
+      memory: { backend: "builtin" },
+    } as OpenClawConfig;
+    const log = createGatewayLogMock();
+    const manager = createBuiltinManagerMock();
+    getMemorySearchManagerMock.mockResolvedValue({ manager });
+
+    await startGatewayMemoryBackend({ cfg, log });
+
+    expect(getMemorySearchManagerMock).toHaveBeenCalledTimes(1);
+    expect(getMemorySearchManagerMock).toHaveBeenCalledWith({
+      cfg,
+      agentId: "main",
+      purpose: "cli",
+    });
+    expect(manager.warmSession).toHaveBeenCalledWith("gateway-startup:main");
+    expect(manager.close).toHaveBeenCalledTimes(1);
+    expect(log.info).toHaveBeenCalledWith(
+      'builtin memory startup warm completed for 1 agent: "main"',
+    );
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("warns when builtin startup warming cannot acquire a manager", async () => {
+    const cfg = {
+      agents: {
+        list: [{ id: "main", default: true }],
+        defaults: {
+          memorySearch: {
+            enabled: true,
+            provider: "openai",
+            model: "text-embedding-3-small",
+            store: { path: "/tmp/index.sqlite", vector: { enabled: false } },
+            sync: { watch: false, onSessionStart: true, onSearch: false },
+            query: { minScore: 0, hybrid: { enabled: false } },
+            sources: ["memory"],
+            experimental: { sessionMemory: false },
+          },
+        },
+      },
+      memory: { backend: "builtin" },
+    } as OpenClawConfig;
+    const log = createGatewayLogMock();
+    getMemorySearchManagerMock.mockResolvedValue({ manager: null, error: "no index" });
+
+    await startGatewayMemoryBackend({ cfg, log });
+
+    expect(log.warn).toHaveBeenCalledWith(
+      'builtin memory startup warm failed for agent "main": no index',
+    );
   });
 });

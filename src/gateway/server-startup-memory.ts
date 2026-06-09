@@ -8,8 +8,87 @@ import {
 import { getActiveMemorySearchManager } from "../plugins/memory-runtime.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 
-function shouldRunQmdStartupBootSync(qmd: ResolvedQmdConfig): boolean {
+export function shouldRunQmdStartupBootSync(qmd: ResolvedQmdConfig): boolean {
   return qmd.update.onBoot && qmd.update.startup !== "off";
+}
+
+export async function runQmdGatewayStartupBootSyncForAgent(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  getManager: typeof getActiveMemorySearchManager;
+  log: { warn: (msg: string) => void };
+}): Promise<boolean> {
+  const { manager, error } = await params.getManager({
+    cfg: params.cfg,
+    agentId: params.agentId,
+    purpose: "cli",
+  });
+  if (!manager) {
+    params.log.warn(
+      `qmd memory startup initialization failed for agent "${params.agentId}": ${error ?? "unknown error"}`,
+    );
+    return false;
+  }
+  try {
+    await manager.sync?.({ reason: "boot", force: true });
+    return true;
+  } catch (err) {
+    params.log.warn(
+      `qmd memory startup boot sync failed for agent "${params.agentId}": ${String(err)}`,
+    );
+    return false;
+  } finally {
+    await manager.close?.().catch((err) => {
+      params.log.warn(
+        `qmd memory startup manager close failed for agent "${params.agentId}": ${String(err)}`,
+      );
+    });
+  }
+}
+
+export function shouldRunBuiltinStartupWarm(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  agentCount: number;
+}): boolean {
+  if (!resolveMemorySearchConfig(params.cfg, params.agentId)) {
+    return false;
+  }
+  return shouldEagerlyStartAgentMemory(params);
+}
+
+export async function warmBuiltinGatewayMemoryForAgent(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  getManager: typeof getActiveMemorySearchManager;
+  log: { warn: (msg: string) => void };
+}): Promise<boolean> {
+  const { manager, error } = await params.getManager({
+    cfg: params.cfg,
+    agentId: params.agentId,
+    purpose: "cli",
+  });
+  if (!manager) {
+    params.log.warn(
+      `builtin memory startup warm failed for agent "${params.agentId}": ${error ?? "unknown error"}`,
+    );
+    return false;
+  }
+  try {
+    await manager.warmSession?.(`gateway-startup:${params.agentId}`);
+    return true;
+  } catch (err) {
+    params.log.warn(
+      `builtin memory startup warm failed for agent "${params.agentId}": ${String(err)}`,
+    );
+    return false;
+  } finally {
+    await manager.close?.().catch((err) => {
+      params.log.warn(
+        `builtin memory startup manager close failed for agent "${params.agentId}": ${String(err)}`,
+      );
+    });
+  }
 }
 
 function hasExplicitAgentMemorySearchConfig(cfg: OpenClawConfig, agentId: string): boolean {
@@ -40,8 +119,10 @@ export async function startGatewayMemoryBackend(params: {
   log: { info?: (msg: string) => void; warn: (msg: string) => void };
 }): Promise<void> {
   const agentIds = listAgentIds(params.cfg);
-  const armedAgentIds: string[] = [];
-  const deferredAgentIds: string[] = [];
+  const qmdArmedAgentIds: string[] = [];
+  const qmdDeferredAgentIds: string[] = [];
+  const builtinWarmedAgentIds: string[] = [];
+
   for (const agentId of agentIds) {
     if (!resolveMemorySearchConfig(params.cfg, agentId)) {
       continue;
@@ -50,58 +131,69 @@ export async function startGatewayMemoryBackend(params: {
     if (!resolved) {
       continue;
     }
+
+    const eagerParams = {
+      cfg: params.cfg,
+      agentId,
+      agentCount: agentIds.length,
+    };
+
+    if (resolved.backend === "builtin") {
+      if (!shouldRunBuiltinStartupWarm(eagerParams)) {
+        continue;
+      }
+      if (
+        await warmBuiltinGatewayMemoryForAgent({
+          cfg: params.cfg,
+          agentId,
+          getManager: getActiveMemorySearchManager,
+          log: params.log,
+        })
+      ) {
+        builtinWarmedAgentIds.push(agentId);
+      }
+      continue;
+    }
+
     if (resolved.backend !== "qmd" || !resolved.qmd) {
       continue;
     }
     if (!shouldRunQmdStartupBootSync(resolved.qmd)) {
       continue;
     }
-    if (
-      !shouldEagerlyStartAgentMemory({
-        cfg: params.cfg,
-        agentId,
-        agentCount: agentIds.length,
-      })
-    ) {
-      deferredAgentIds.push(agentId);
+    if (!shouldEagerlyStartAgentMemory(eagerParams)) {
+      qmdDeferredAgentIds.push(agentId);
       continue;
     }
 
-    const { manager, error } = await getActiveMemorySearchManager({
-      cfg: params.cfg,
-      agentId,
-      purpose: "cli",
-    });
-    if (!manager) {
-      params.log.warn(
-        `qmd memory startup initialization failed for agent "${agentId}": ${error ?? "unknown error"}`,
-      );
-      continue;
+    if (
+      await runQmdGatewayStartupBootSyncForAgent({
+        cfg: params.cfg,
+        agentId,
+        getManager: getActiveMemorySearchManager,
+        log: params.log,
+      })
+    ) {
+      qmdArmedAgentIds.push(agentId);
     }
-    try {
-      await manager.sync?.({ reason: "boot", force: true });
-    } catch (err) {
-      params.log.warn(`qmd memory startup boot sync failed for agent "${agentId}": ${String(err)}`);
-      continue;
-    } finally {
-      await manager.close?.().catch((err) => {
-        params.log.warn(
-          `qmd memory startup manager close failed for agent "${agentId}": ${String(err)}`,
-        );
-      });
-    }
-    armedAgentIds.push(agentId);
   }
-  if (armedAgentIds.length > 0) {
+  if (qmdArmedAgentIds.length > 0) {
     params.log.info?.(
-      `qmd memory startup boot sync completed for ${formatAgentCount(armedAgentIds.length)}: ${armedAgentIds
+      `qmd memory startup boot sync completed for ${formatAgentCount(qmdArmedAgentIds.length)}: ${qmdArmedAgentIds
         .map((agentId) => `"${agentId}"`)
         .join(", ")}`,
     );
   }
-  if (deferredAgentIds.length > 0) {
+  if (qmdDeferredAgentIds.length > 0) {
     params.log.info?.(
-      `qmd memory startup initialization deferred for ${formatAgentCount(deferredAgentIds.length)}: ${deferredAgentIds
+      `qmd memory startup initialization deferred for ${formatAgentCount(qmdDeferredAgentIds.length)}: ${qmdDeferredAgentIds
+        .map((agentId) => `"${agentId}"`)
+        .join(", ")}`,
+    );
+  }
+  if (builtinWarmedAgentIds.length > 0) {
+    params.log.info?.(
+      `builtin memory startup warm completed for ${formatAgentCount(builtinWarmedAgentIds.length)}: ${builtinWarmedAgentIds
         .map((agentId) => `"${agentId}"`)
         .join(", ")}`,
     );
