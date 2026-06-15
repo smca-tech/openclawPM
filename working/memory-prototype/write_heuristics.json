@@ -1,0 +1,33 @@
+{
+  "version": "memory-write-heuristics-v1",
+  "remember": {
+    "default_visibility": "private",
+    "content_format": "markdown",
+    "summary_max_chars": 240,
+    "id_prefix": "mem_runtime_",
+    "id_hash_length": 10,
+    "checksum_fields": ["kind", "scope", "scope_key", "title", "content"],
+    "dedupe_active_only": true,
+    "event_actor_id": "yuki",
+    "event_type": "created",
+    "event_source_details": ["source_type", "source_ref"]
+  },
+  "supersede": {
+    "status": "superseded",
+    "link_relation": "supersedes",
+    "link_weight": 1.0,
+    "metadata_created_by": "memory_manager"
+  },
+  "update": {
+    "summary_max_chars": 240,
+    "merge_tags": true,
+    "merge_mentions": true,
+    "preserve_existing_non_null": false,
+    "touch_updated_at": true,
+    "recompute_checksum": true,
+    "require_version_match": true,
+    "version_field": "revision",
+    "event_type": "updated",
+    "event_actor_id": "yuki"
+  }
+}
