@@ -1,0 +1,132 @@
+{
+  "version": "memory-recall-presets-v2",
+  "bucket_order": ["pinned", "scoped", "entity", "recent"],
+  "bucket_bonus": {
+    "pinned": 1000,
+    "scoped": 700,
+    "entity": 500,
+    "recent": 300
+  },
+  "strategies": {
+    "default_pinned": {
+      "visibility": "respect_context",
+      "pinned_only": true,
+      "scopes": ["global", "user", "agent"],
+      "limit": 20
+    },
+    "group_pinned": {
+      "visibility": "normal_only",
+      "pinned_only": true,
+      "allowed_kinds": ["instruction", "preference", "fact"],
+      "scopes": ["global", "agent"],
+      "limit": 12
+    },
+    "project_pinned": {
+      "visibility": "respect_context",
+      "pinned_only": true,
+      "project_scope_only": true,
+      "fallback_user_kinds": ["instruction", "preference"],
+      "fallback_global_kinds": ["instruction", "preference", "fact"],
+      "limit": 20
+    },
+    "admin_pinned": {
+      "visibility": "all",
+      "pinned_only": true,
+      "limit": 25
+    },
+    "default_scoped": {
+      "visibility": "respect_context",
+      "importance_thresholds": {
+        "global": 75,
+        "user": 70,
+        "project": 65,
+        "chat": 60,
+        "agent": 70
+      },
+      "limit": 40
+    },
+    "group_scoped": {
+      "visibility": "normal_only",
+      "allowed_kinds": ["instruction", "preference", "fact", "project", "person"],
+      "importance_thresholds": {
+        "global": 75,
+        "agent": 75,
+        "project": 80
+      },
+      "limit": 25
+    },
+    "project_scoped": {
+      "visibility": "respect_context",
+      "project_scope_only": true,
+      "importance_thresholds": {
+        "project": 55,
+        "user": 75,
+        "global": 70
+      },
+      "fallback_user_kinds": ["instruction", "preference"],
+      "fallback_global_kinds": ["fact", "instruction", "preference"],
+      "prefer_project_first": true,
+      "limit": 40
+    },
+    "admin_scoped": {
+      "visibility": "all",
+      "minimum_importance": 50,
+      "limit": 50
+    },
+    "default_entity": {
+      "visibility": "respect_context",
+      "per_entity_limit": 10,
+      "demote_normal_credentials": true
+    },
+    "group_entity": {
+      "visibility": "normal_only",
+      "allowed_kinds": ["fact", "project", "person"],
+      "scopes": ["global", "project", "agent"],
+      "per_entity_limit": 8
+    },
+    "default_recent": {
+      "visibility": "respect_context",
+      "scope_modes": ["session", "chat"],
+      "limit_from_context": "recent_session_limit"
+    },
+    "group_recent": {
+      "visibility": "normal_only",
+      "scope_modes": ["chat"],
+      "limit": 4
+    }
+  },
+  "presets": {
+    "dm": {
+      "bucket_strategies": {
+        "pinned": "default_pinned",
+        "scoped": "default_scoped",
+        "entity": "default_entity",
+        "recent": "default_recent"
+      }
+    },
+    "group": {
+      "bucket_strategies": {
+        "pinned": "group_pinned",
+        "scoped": "group_scoped",
+        "entity": "group_entity",
+        "recent": "group_recent"
+      }
+    },
+    "project": {
+      "bucket_strategies": {
+        "pinned": "project_pinned",
+        "scoped": "project_scoped",
+        "entity": "default_entity",
+        "recent": "default_recent"
+      }
+    },
+    "admin": {
+      "bucket_strategies": {
+        "pinned": "admin_pinned",
+        "scoped": "admin_scoped",
+        "entity": "default_entity",
+        "recent": "default_recent"
+      }
+    }
+  }
+}

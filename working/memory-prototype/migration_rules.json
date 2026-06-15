@@ -1,0 +1,130 @@
+{
+  "version": "markdown-memory-v2-rules",
+  "reserved_section_names": [
+    "working style",
+    "preferences",
+    "ongoing projects",
+    "long-term project context",
+    "recurring annoyances",
+    "people",
+    "tools / accounts / environment notes",
+    "notes"
+  ],
+  "scope_detection": {
+    "generic_single_section_person_scope": true,
+    "project_rules": [
+      {
+        "match_any": ["openclawpm"],
+        "scope": "project",
+        "scope_key": "openclawPM",
+        "mention": ["project", "openclawPM", "subject"]
+      },
+      {
+        "match_any": ["witchy intentions", "witchyintentions"],
+        "scope": "project",
+        "scope_key": "witchy-intentions",
+        "mention": ["project", "witchy-intentions", "subject"]
+      }
+    ]
+  },
+  "sensitivity_rules": {
+    "force_normal_kind_hints": ["summary", "note", "project"],
+    "secret_markers": [
+      "api key:",
+      "api secret:",
+      "password:",
+      "client secret:",
+      "private key:",
+      "access token:",
+      "refresh token:",
+      "bearer token:"
+    ],
+    "secret_presence_markers": [
+      "password stored here",
+      "credentials stored here",
+      "secret stored here",
+      "token stored here"
+    ],
+    "sensitive_markers": [
+      "username:",
+      "login:",
+      "email:"
+    ],
+    "sensitive_when_kind": ["credential_ref"],
+    "special_title_sensitive_rules": [
+      {
+        "title_contains": "witchy intentions",
+        "content_contains": "username:",
+        "sensitivity": "sensitive"
+      }
+    ]
+  },
+  "section_kind_rules": {
+    "preferences": "preference",
+    "working style": "instruction",
+    "ongoing projects": "project",
+    "long-term project context": "project",
+    "people": "person",
+    "tools / accounts / environment notes": "note",
+    "notes": "note",
+    "recurring annoyances": "fact"
+  },
+  "section_defaults": {
+    "importance": 70,
+    "pinned": 0,
+    "durable": 1,
+    "visibility": "private"
+  },
+  "section_kind_overrides": {
+    "preference": { "importance": 90, "pinned": 1 },
+    "instruction": { "importance": 90, "pinned": 1 },
+    "project": { "importance": 85 },
+    "person": { "importance": 80 },
+    "credential_ref": { "importance": 95, "pinned": 1 },
+    "note": { "importance": 60 }
+  },
+  "section_name_overrides": {
+    "tools / accounts / environment notes": { "importance": 55, "pinned": 0, "durable": 1 },
+    "notes": { "importance": 60 }
+  },
+  "atomic_rules": {
+    "section_kind_map": {
+      "preferences": { "kind": "preference", "importance": 90, "pinned": 1 },
+      "working style": { "kind": "instruction", "importance": 90, "pinned": 1 },
+      "people": { "kind": "person", "importance": 80 },
+      "ongoing projects": { "kind": "project", "importance": 85 },
+      "long-term project context": { "kind": "project", "importance": 85 },
+      "tools / accounts / environment notes": { "kind": "fact", "importance": 52, "pinned": 0 }
+    },
+    "secret_key_names": [
+      "git password",
+      "google account password",
+      "wordpress password",
+      "smb password",
+      "alternate smb password"
+    ],
+    "secret_key_contains": ["api key", "api secret"],
+    "identifier_key_contains": ["username", "login", "email"],
+    "person_identity_keys": ["name", "timezone", "vibe", "emoji", "creature"],
+    "high_value_project_keys": ["git repo", "local folder", "url"],
+    "tools_identifier_importance": 58,
+    "tools_default_importance": 52,
+    "credential_importance": 100,
+    "person_identity_importance": 85,
+    "project_value_importance": 85,
+    "default_visibility": "private"
+  },
+  "daily_rules": {
+    "session_summary_mentions": [],
+    "daily_note_content_mentions": [
+      {
+        "match_any": ["user prefers", "user timezone", "user"],
+        "mention": ["person", "user", "subject"]
+      },
+      {
+        "match_any": ["assistant", "yuki mori"],
+        "mention": ["person", "assistant", "subject"]
+      }
+    ]
+  }
+}
