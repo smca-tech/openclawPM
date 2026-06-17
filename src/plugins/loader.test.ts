@@ -3158,7 +3158,7 @@ module.exports = { id: "throws-after-import", register() {} };`,
     expect(scoped.providers.map((entry) => entry.provider.id)).toEqual(["scoped-provider"]);
   });
 
-  it("does not replace active memory plugin registries during non-activating loads", () => {
+  it("does not replace active memory plugin registries during non-activating loads", async () => {
     useNoBundledPlugins();
     registerMemoryEmbeddingProvider({
       id: "active",
@@ -3236,7 +3236,7 @@ module.exports = { id: "throws-after-import", register() {} };`,
     });
 
     expect(scoped.plugins.find((entry) => entry.id === "snapshot-memory")?.status).toBe("loaded");
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual([
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
       "active memory section",
       "active wiki supplement",
     ]);
@@ -3380,7 +3380,7 @@ module.exports = { id: "throws-after-import", register() {} };`,
     ]);
   });
 
-  it("clears newly-registered memory plugin registries when plugin register fails", () => {
+  it("clears newly-registered memory plugin registries when plugin register fails", async () => {
     useNoBundledPlugins();
     const plugin = writePlugin({
       id: "failing-memory",
@@ -3434,7 +3434,9 @@ module.exports = { id: "throws-after-import", register() {} };`,
     });
 
     expect(registry.plugins.find((entry) => entry.id === "failing-memory")?.status).toBe("error");
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toStrictEqual([]);
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toStrictEqual(
+      [],
+    );
     expect(listMemoryCorpusSupplements()).toStrictEqual([]);
     expect(resolveMemoryFlushPlan({})).toBeNull();
     expect(getMemoryRuntime()).toBeUndefined();

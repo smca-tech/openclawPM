@@ -67,6 +67,7 @@ function createManagerMock(params: {
         withMemorySourceCounts: params.withMemorySourceCounts,
       }),
     ),
+    warmSession: vi.fn(async () => {}),
     sync: vi.fn(async () => {}),
     probeEmbeddingAvailability: vi.fn(async () => ({ ok: true })),
     probeVectorAvailability: vi.fn(async () => true),
@@ -326,6 +327,20 @@ describe("getMemorySearchManager caching", () => {
 
     expect(first.manager).toBe(second.manager);
     expect(createQmdManagerMock.mock.calls).toHaveLength(1);
+  });
+
+  it("exposes warmSession through the runtime search manager surface", async () => {
+    const cfg = createQmdCfg("warm-session-main");
+    const result = await getMemorySearchManager({ cfg, agentId: "warm-session-main" });
+    const manager = requireManager(result) as SearchManager & {
+      warmSession?: (sessionKey?: string) => Promise<void>;
+    };
+
+    expect(manager.warmSession).toBeTypeOf("function");
+
+    await manager.warmSession?.("session-123");
+
+    expect(mockPrimary.warmSession).toHaveBeenCalledWith("session-123");
   });
 
   it("evicts failed qmd wrapper so next call retries qmd", async () => {

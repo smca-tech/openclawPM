@@ -332,6 +332,7 @@ import {
 import { releaseEmbeddedAttemptSessionLockForAbort } from "./attempt-abort.js";
 import { resolveAttemptWorkspaceBootstrapRouting } from "./attempt-bootstrap-routing.js";
 import { configureEmbeddedAttemptHttpRuntime } from "./attempt-http-runtime.js";
+import { warmEmbeddedSessionMemoryForRun } from "./attempt-memory-startup.js";
 import {
   createEmbeddedRunStageTracker,
   formatEmbeddedRunStageSummary,
@@ -2015,6 +2016,12 @@ export async function runEmbeddedAttempt(
         params.model.api === "openai-chatgpt-responses";
 
       await prewarmSessionFile(params.sessionFile);
+      await warmEmbeddedSessionMemoryForRun({
+        config: params.config,
+        agentId: sessionAgentId,
+        sessionKey: params.sessionKey,
+        log,
+      });
       const preparedUserTurnMessage = await params.userTurnTranscriptRecorder?.resolveMessage();
       sessionManager = guardSessionManager(SessionManager.open(params.sessionFile), {
         agentId: sessionAgentId,

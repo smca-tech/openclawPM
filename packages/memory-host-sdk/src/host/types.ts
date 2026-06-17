@@ -107,6 +107,7 @@ export interface MemorySearchManager {
   ): Promise<MemorySearchResult[]>;
   readFile(params: { relPath: string; from?: number; lines?: number }): Promise<MemoryReadResult>;
   status(): MemoryProviderStatus;
+  warmSession?(sessionKey?: string): Promise<void>;
   sync?(params?: {
     reason?: string;
     force?: boolean;

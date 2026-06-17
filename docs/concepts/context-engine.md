@@ -118,6 +118,10 @@ When no `plugins.slots.contextEngine` is set (or it's set to `"legacy"`), this e
 
 A plugin can register a context engine using the plugin API:
 
+Note: `buildMemorySystemPromptAddition(...)` is async. It can include prompt-time memory recall from async memory prompt builders. The legacy full `buildAgentSystemPrompt(...)` path remains synchronous for now and uses only synchronously-available memory prompt guidance.
+
+Validation note: if you change async memory prompt behavior, validate both the host-side plugin/context-engine tests and the memory extension lane. In constrained shells, the memory extension Vitest lane may hang or provide incomplete output, so rerun that lane in a normal local/dev environment before treating the change as fully validated.
+
 ```ts
 import { buildMemorySystemPromptAddition } from "openclaw/plugin-sdk/core";
 
@@ -139,7 +143,7 @@ export default function register(api) {
       return {
         messages: buildContext(messages, tokenBudget),
         estimatedTokens: countTokens(messages),
-        systemPromptAddition: buildMemorySystemPromptAddition({
+        systemPromptAddition: await buildMemorySystemPromptAddition({
           availableTools: availableTools ?? new Set(),
           citationsMode,
         }),

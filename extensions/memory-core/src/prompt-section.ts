@@ -1,12 +1,108 @@
 // Memory Core plugin module implements prompt section behavior.
-import type { MemoryPromptSectionBuilder } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
+import type {
+  MemoryPromptSectionBuilder,
+  OpenClawConfig,
+} from "openclaw/plugin-sdk/memory-core-host-runtime-core";
+import { resolveMemoryBackendConfig } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
+import { getMemorySearchManager } from "./memory/index.js";
 
-export const buildPromptSection: MemoryPromptSectionBuilder = ({
-  availableTools,
-  citationsMode,
-}) => {
-  const hasMemorySearch = availableTools.has("memory_search");
-  const hasMemoryGet = availableTools.has("memory_get");
+const PROMPT_RECALL_QUERY = "recent work decisions preferences todos";
+const PROMPT_RECALL_MAX_RESULTS = 3;
+const PROMPT_RECALL_MAX_SNIPPET_CHARS = 160;
+
+type PromptParams = Parameters<MemoryPromptSectionBuilder>[0];
+
+type PromptRecallResult = {
+  path: string;
+  snippet: string;
+  score?: number;
+  source?: string;
+  startLine?: number;
+  endLine?: number;
+};
+
+function buildRuntimeContextLine(params: PromptParams): string | null {
+  if (!params.cfg || !params.agentId) {
+    return null;
+  }
+  const resolved = resolveMemoryBackendConfig({ cfg: params.cfg, agentId: params.agentId });
+  if (!resolved) {
+    return null;
+  }
+
+  const parts = [`Active backend: ${resolved.backend}`];
+  parts.push(`agent: ${params.agentId}`);
+  if (params.sessionKey) {
+    parts.push(`session: ${params.sessionKey}`);
+  }
+  if (resolved.backend === "qmd" && resolved.qmd) {
+    parts.push(`qmd mode: ${resolved.qmd.searchMode}`);
+  }
+  return parts.join(" | ");
+}
+
+function canBuildPromptRecall(params: PromptParams): params is PromptParams & {
+  cfg: OpenClawConfig;
+  agentId: string;
+} {
+  return Boolean(params.cfg && params.agentId && params.availableTools.has("memory_search"));
+}
+
+function normalizeSnippet(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function trimSnippet(value: string, maxChars = PROMPT_RECALL_MAX_SNIPPET_CHARS): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxChars - 1)).trimEnd()}...`;
+}
+
+function buildPromptRecallLine(result: PromptRecallResult): string {
+  const location =
+    typeof result.startLine === "number"
+      ? `#L${result.startLine}${
+          typeof result.endLine === "number" && result.endLine !== result.startLine
+            ? `-L${result.endLine}`
+            : ""
+        }`
+      : "";
+  const sourceLabel = result.source && result.source !== "memory" ? ` [${result.source}]` : "";
+  return `- ${result.path}${location}${sourceLabel}: ${trimSnippet(normalizeSnippet(result.snippet))}`;
+}
+
+async function buildPromptRecallSummary(params: PromptParams): Promise<string[]> {
+  if (!canBuildPromptRecall(params)) {
+    return [];
+  }
+
+  try {
+    const { manager } = await getMemorySearchManager({
+      cfg: params.cfg,
+      agentId: params.agentId,
+      purpose: "status",
+    });
+    if (!manager) {
+      return [];
+    }
+    const results = (await manager.search(PROMPT_RECALL_QUERY, {
+      maxResults: PROMPT_RECALL_MAX_RESULTS,
+      sessionKey: params.sessionKey,
+      sources: ["memory", "sessions"],
+    })) as PromptRecallResult[];
+    if (results.length === 0) {
+      return [];
+    }
+    return ["Recent indexed memory hints:", ...results.map(buildPromptRecallLine)];
+  } catch {
+    return [];
+  }
+}
+
+export const buildPromptSection: MemoryPromptSectionBuilder = async (params) => {
+  const hasMemorySearch = params.availableTools.has("memory_search");
+  const hasMemoryGet = params.availableTools.has("memory_get");
 
   if (!hasMemorySearch && !hasMemoryGet) {
     return [];
@@ -25,7 +121,15 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
   }
 
   const lines = ["## Memory Recall", toolGuidance];
-  if (citationsMode === "off") {
+  const runtimeContext = buildRuntimeContextLine(params);
+  if (runtimeContext) {
+    lines.push(runtimeContext);
+  }
+  const promptRecallLines = await buildPromptRecallSummary(params);
+  if (promptRecallLines.length > 0) {
+    lines.push(...promptRecallLines);
+  }
+  if (params.citationsMode === "off") {
     lines.push(
       "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",
     );

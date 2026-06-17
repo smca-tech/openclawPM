@@ -448,27 +448,27 @@ describe("Engine contract tests", () => {
     });
   });
 
-  it("builds a normalized memory system prompt addition from the active memory prompt path", () => {
+  it("builds a normalized memory system prompt addition from the active memory prompt path", async () => {
     registerMemoryPromptSection(({ citationsMode }) => [
       "## Memory Recall",
       `citations=${citationsMode ?? "auto"}`,
       "",
     ]);
 
-    expect(
+    await expect(
       buildMemorySystemPromptAddition({
         availableTools: new Set(["memory_search"]),
         citationsMode: "off",
       }),
-    ).toBe("## Memory Recall\ncitations=off");
+    ).resolves.toBe("## Memory Recall\ncitations=off");
   });
 
-  it("returns undefined when the active memory prompt path contributes nothing", () => {
-    expect(
+  it("returns undefined when the active memory prompt path contributes nothing", async () => {
+    await expect(
       buildMemorySystemPromptAddition({
         availableTools: new Set(["memory_search"]),
       }),
-    ).toBeUndefined();
+    ).resolves.toBeUndefined();
   });
 });
 

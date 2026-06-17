@@ -23,19 +23,19 @@ describe("memory-host-core helpers", () => {
     clearMemoryPluginState();
   });
 
-  it("exposes the active memory prompt guidance builder for context engines", () => {
+  it("exposes the active memory prompt guidance builder for context engines", async () => {
     registerMemoryPromptSection(({ citationsMode }) => [
       "## Memory Recall",
       `citations=${citationsMode ?? "default"}`,
       "",
     ]);
 
-    expect(
+    await expect(
       buildActiveMemoryPromptSection({
         availableTools: new Set(["memory_search"]),
         citationsMode: "off",
       }),
-    ).toEqual(["## Memory Recall", "citations=off", ""]);
+    ).resolves.toEqual(["## Memory Recall", "citations=off", ""]);
   });
 
   it("exposes active memory public artifacts for companion plugins", async () => {

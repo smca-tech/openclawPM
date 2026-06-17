@@ -42,11 +42,11 @@ function createMemoryFlushPlan(relativePath: string) {
   };
 }
 
-function expectClearedMemoryState() {
+async function expectClearedMemoryState() {
   expect(resolveMemoryFlushPlan({})).toBeNull();
-  expect(buildMemoryPromptSection({ availableTools: new Set(["memory_search"]) })).toStrictEqual(
-    [],
-  );
+  await expect(
+    buildMemoryPromptSection({ availableTools: new Set(["memory_search"]) }),
+  ).resolves.toStrictEqual([]);
   expect(listMemoryCorpusSupplements()).toStrictEqual([]);
   expect(getMemoryRuntime()).toBeUndefined();
 }
@@ -78,11 +78,11 @@ describe("memory plugin state", () => {
     clearMemoryPluginState();
   });
 
-  it("returns empty defaults when no memory plugin state is registered", () => {
-    expectClearedMemoryState();
+  it("returns empty defaults when no memory plugin state is registered", async () => {
+    await expectClearedMemoryState();
   });
 
-  it("delegates prompt building to the registered memory plugin", () => {
+  it("delegates prompt building to the registered memory plugin", async () => {
     registerMemoryPromptSection(({ availableTools }) => {
       if (!availableTools.has("memory_search")) {
         return [];
@@ -90,14 +90,12 @@ describe("memory plugin state", () => {
       return ["## Custom Memory", "Use custom memory tools.", ""];
     });
 
-    expect(buildMemoryPromptSection({ availableTools: new Set(["memory_search"]) })).toEqual([
-      "## Custom Memory",
-      "Use custom memory tools.",
-      "",
-    ]);
+    await expect(
+      buildMemoryPromptSection({ availableTools: new Set(["memory_search"]) }),
+    ).resolves.toEqual(["## Custom Memory", "Use custom memory tools.", ""]);
   });
 
-  it("adapts deprecated split registration to the unified memory capability", () => {
+  it("adapts deprecated split registration to the unified memory capability", async () => {
     const runtime = createMemoryRuntime();
     const promptBuilder = () => ["legacy prompt"];
     const flushPlanResolver = () => createMemoryFlushPlan("memory/legacy.md");
@@ -106,7 +104,9 @@ describe("memory plugin state", () => {
     registerMemoryFlushPlanResolver(flushPlanResolver);
     registerMemoryRuntime(runtime);
 
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual(["legacy prompt"]);
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
+      "legacy prompt",
+    ]);
     expect(resolveMemoryFlushPlan({})?.relativePath).toBe("memory/legacy.md");
     expect(getMemoryRuntime()).toBe(runtime);
     expect(getMemoryCapabilityRegistration()).toStrictEqual({
@@ -140,7 +140,9 @@ describe("memory plugin state", () => {
       runtime,
     });
 
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual(["capability prompt"]);
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
+      "capability prompt",
+    ]);
     expect(resolveMemoryFlushPlan({})?.relativePath).toBe("memory/capability.md");
     await expect(
       getMemoryRuntime()?.getMemorySearchManager({
@@ -245,37 +247,41 @@ describe("memory plugin state", () => {
     ]);
   });
 
-  it("passes citations mode through to the prompt builder", () => {
+  it("passes citations mode through to the prompt builder", async () => {
     registerMemoryPromptSection(({ citationsMode }) => [
       `citations: ${citationsMode ?? "default"}`,
     ]);
 
-    expect(
+    await expect(
       buildMemoryPromptSection({
         availableTools: new Set(),
         citationsMode: "off",
       }),
-    ).toEqual(["citations: off"]);
+    ).resolves.toEqual(["citations: off"]);
   });
 
-  it("appends prompt supplements in plugin-id order", () => {
+  it("appends prompt supplements in plugin-id order", async () => {
     registerMemoryPromptSection(() => ["primary"]);
     registerMemoryPromptSupplement("memory-wiki", () => ["wiki"]);
     registerMemoryPromptSupplement("alpha-helper", () => ["alpha"]);
 
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual([
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
       "primary",
       "alpha",
       "wiki",
     ]);
   });
 
-  it("ignores malformed prompt builder output", () => {
+  it("ignores malformed prompt builder output", async () => {
     registerMemoryPromptSection(() => ["primary", 1, undefined] as never);
     registerMemoryPromptSupplement("async-helper", () => Promise.resolve(["async"]) as never);
     registerMemoryPromptSupplement("valid-helper", () => ["valid", false] as never);
 
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual(["primary", "valid"]);
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
+      "primary",
+      "async",
+      "valid",
+    ]);
   });
 
   it("stores memory corpus supplements", async () => {
@@ -319,7 +325,7 @@ describe("memory plugin state", () => {
     ).resolves.toEqual({ manager: null, error: "missing" });
   });
 
-  it("restoreMemoryPluginState swaps both prompt and flush state", () => {
+  it("restoreMemoryPluginState swaps both prompt and flush state", async () => {
     const runtime = createMemoryRuntime();
     registerMemoryState({
       promptSection: ["first"],
@@ -334,10 +340,10 @@ describe("memory plugin state", () => {
     const snapshot = createMemoryStateSnapshot();
 
     resetMemoryPluginState();
-    expectClearedMemoryState();
+    await expectClearedMemoryState();
 
     restoreMemoryPluginState(snapshot);
-    expect(buildMemoryPromptSection({ availableTools: new Set() })).toEqual([
+    await expect(buildMemoryPromptSection({ availableTools: new Set() })).resolves.toEqual([
       "first",
       "wiki supplement",
     ]);
@@ -346,7 +352,7 @@ describe("memory plugin state", () => {
     expect(getMemoryRuntime()).toBe(runtime);
   });
 
-  it("clearMemoryPluginState resets both registries", () => {
+  it("clearMemoryPluginState resets both registries", async () => {
     registerMemoryState({
       promptSection: ["stale section"],
       relativePath: "memory/stale.md",
@@ -355,6 +361,6 @@ describe("memory plugin state", () => {
 
     clearMemoryPluginState();
 
-    expectClearedMemoryState();
+    await expectClearedMemoryState();
   });
 });

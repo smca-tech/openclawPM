@@ -80,6 +80,10 @@ vi.mock("./tools.runtime.js", () => ({
   readAgentMemoryFile: readAgentMemoryFileMock,
 }));
 
+vi.mock("./memory/index.js", () => ({
+  getMemorySearchManager: getMemorySearchManagerMock,
+}));
+
 export function setMemoryBackend(next: MemoryBackend): void {
   backend = next;
 }
