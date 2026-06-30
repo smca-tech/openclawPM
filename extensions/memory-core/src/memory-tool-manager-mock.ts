@@ -39,7 +39,7 @@ const stubManager = {
     chunks: 1,
     dirty: false,
     workspaceDir,
-    dbPath: "/workspace/.memory/index.sqlite",
+    dbPath: `${workspaceDir}/.memory/index.sqlite`,
     provider: "builtin",
     model: "builtin",
     requestedProvider: "builtin",

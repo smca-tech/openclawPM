@@ -66,11 +66,22 @@ export const recallPresetsSchema = z.object({
   version: z.string(),
   bucket_order: z.array(z.string()),
   bucket_bonus: z.record(z.string(), z.number()),
+  filter_bundles: z.record(z.string(), z.record(z.string(), z.any())).optional(),
   strategies: z.record(z.string(), z.record(z.string(), z.any())),
   presets: z.record(
     z.string(),
     z.object({
-      bucket_strategies: z.record(z.string(), z.string()),
+      bucket_strategies: z.record(
+        z.string(),
+        z.union([
+          z.string(),
+          z.object({
+            strategy: z.string(),
+            filter_bundles: z.array(z.string()).optional(),
+            filters: z.record(z.string(), z.any()).optional(),
+          }),
+        ]),
+      ),
     }),
   ),
 });

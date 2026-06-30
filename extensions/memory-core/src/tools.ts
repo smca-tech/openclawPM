@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type { MemorySource } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import {
@@ -16,6 +18,15 @@ import {
   resolveMemoryCorePluginConfig,
   resolveMemoryDeepDreamingConfig,
 } from "openclaw/plugin-sdk/memory-core-host-status";
+import { Type } from "typebox";
+import { loadWriteHeuristicsConfig } from "../../../src/memory/config/loaders.js";
+import { SqliteMemoryWriterStore } from "../../../src/memory/store/sqlite-memory-writer-store.js";
+import {
+  type MemorySensitivity,
+  type MemoryScope,
+  type MemoryKind,
+} from "../../../src/memory/types.js";
+import { computeMemoryChecksum, MemoryWriter } from "../../../src/memory/write/memory-writer.js";
 import { filterMemorySearchHitsBySessionVisibility } from "./session-search-visibility.js";
 import { recordShortTermRecalls } from "./short-term-promotion.js";
 import {
@@ -39,6 +50,128 @@ import {
 type MemorySearchToolResult =
   | (MemorySearchResult & { corpus: MemorySource })
   | MemoryCorpusSearchResult;
+
+const MementoWriteSchema = Type.Object({
+  content: Type.String(),
+  title: Type.Optional(Type.String()),
+  kind: Type.Optional(
+    Type.Union([
+      Type.Literal("fact"),
+      Type.Literal("preference"),
+      Type.Literal("person"),
+      Type.Literal("project"),
+      Type.Literal("decision"),
+      Type.Literal("instruction"),
+      Type.Literal("todo"),
+      Type.Literal("summary"),
+      Type.Literal("note"),
+      Type.Literal("credential_ref"),
+    ]),
+  ),
+  scope: Type.Optional(
+    Type.Union([
+      Type.Literal("global"),
+      Type.Literal("user"),
+      Type.Literal("session"),
+      Type.Literal("project"),
+      Type.Literal("chat"),
+      Type.Literal("agent"),
+    ]),
+  ),
+  scopeKey: Type.Optional(Type.String()),
+  sessionId: Type.Optional(Type.String()),
+  sourceType: Type.Optional(Type.String()),
+  sourceRef: Type.Optional(Type.String()),
+  tags: Type.Optional(Type.Array(Type.String())),
+  importance: Type.Optional(Type.Number()),
+  confidence: Type.Optional(Type.Number()),
+  pinned: Type.Optional(Type.Boolean()),
+  durable: Type.Optional(Type.Boolean()),
+  sensitivity: Type.Optional(
+    Type.Union([Type.Literal("normal"), Type.Literal("sensitive"), Type.Literal("secret")]),
+  ),
+  authorType: Type.Optional(Type.String()),
+  authorId: Type.Optional(Type.String()),
+  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+});
+
+type LoadedWriteConfig = Awaited<ReturnType<typeof loadWriteHeuristicsConfig>>;
+let loadedWriteConfigPromise: Promise<LoadedWriteConfig> | null = null;
+
+function loadMementoWriteConfig(): Promise<LoadedWriteConfig> {
+  loadedWriteConfigPromise ??= loadWriteHeuristicsConfig();
+  return loadedWriteConfigPromise;
+}
+
+function resolveMementoWriteScopeKey(params: {
+  requestedScope: MemoryScope;
+  rawScopeKey?: string;
+  agentSessionKey?: string;
+  agentId: string;
+}): string | null {
+  const explicit = params.rawScopeKey?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  switch (params.requestedScope) {
+    case "session":
+      return params.agentSessionKey?.trim() || null;
+    case "agent":
+      return params.agentId;
+    default:
+      return null;
+  }
+}
+
+function resolveMementoDbPath(status: unknown): string {
+  const dbPath =
+    typeof status === "object" && status && "dbPath" in status && typeof status.dbPath === "string"
+      ? status.dbPath
+      : "";
+  const trimmed = dbPath.trim();
+  if (!trimmed) {
+    throw new Error("memory database path unavailable");
+  }
+  if (trimmed === "~") {
+    return path.join(process.env.HOME ?? process.cwd());
+  }
+  if (trimmed.startsWith("~/")) {
+    return path.join(process.env.HOME ?? process.cwd(), trimmed.slice(2));
+  }
+  return path.resolve(trimmed);
+}
+
+function createMemoryWriterConfig(raw: LoadedWriteConfig) {
+  return {
+    remember: {
+      idPrefix: raw.remember.id_prefix,
+      idHashLength: raw.remember.id_hash_length,
+      summaryMaxChars: raw.remember.summary_max_chars,
+      checksumFields: raw.remember.checksum_fields as Array<
+        "kind" | "scope" | "scope_key" | "title" | "content"
+      >,
+      defaultVisibility: raw.remember.default_visibility,
+      contentFormat: raw.remember.content_format,
+      eventType: raw.remember.event_type,
+      eventActorId: raw.remember.event_actor_id,
+    },
+    update: {
+      versionField: raw.update.version_field,
+      mergeTags: raw.update.merge_tags,
+      mergeMentions: raw.update.merge_mentions,
+      recomputeChecksum: raw.update.recompute_checksum,
+      requireVersionMatch: raw.update.require_version_match,
+      eventType: raw.update.event_type,
+      eventActorId: raw.update.event_actor_id,
+    },
+    supersede: {
+      status: raw.supersede.status,
+      linkRelation: raw.supersede.link_relation,
+      linkWeight: raw.supersede.link_weight,
+      metadataCreatedBy: raw.supersede.metadata_created_by,
+    },
+  };
+}
 
 function sortMemorySearchToolResults<T extends { score: number; path: string }>(results: T[]): T[] {
   return results.toSorted((left, right) => {
@@ -471,6 +604,116 @@ export function createMemoryGetTool(options: {
           lines: lines ?? undefined,
           agentSessionKey: options.agentSessionKey,
         });
+      },
+  });
+}
+
+export function createMementoWriteTool(options: {
+  config?: OpenClawConfig;
+  getConfig?: () => OpenClawConfig | undefined;
+  agentId?: string;
+  agentSessionKey?: string;
+}) {
+  return createMemoryTool({
+    options,
+    label: "Memento Write",
+    name: "memento_write",
+    description:
+      "Write a structured memory record into the runtime memento store. Use when you need to persist a new fact, preference, decision, note, or todo through the live tool surface.",
+    parameters: MementoWriteSchema,
+    execute:
+      ({ cfg, agentId }) =>
+      async (_toolCallId, params) => {
+        const rawParams = asToolParamsRecord(params);
+        const content = readStringParam(rawParams, "content", { required: true });
+        const title = readStringParam(rawParams, "title") ?? null;
+        const kind = (readStringParam(rawParams, "kind") as MemoryKind | undefined) ?? "note";
+        const scope = (readStringParam(rawParams, "scope") as MemoryScope | undefined) ?? "session";
+        const scopeKey = resolveMementoWriteScopeKey({
+          requestedScope: scope,
+          rawScopeKey: readStringParam(rawParams, "scopeKey") ?? undefined,
+          agentSessionKey: options.agentSessionKey,
+          agentId,
+        });
+        const sourceType = readStringParam(rawParams, "sourceType") ?? "tool";
+        const sourceRef = readStringParam(rawParams, "sourceRef") ?? null;
+        const sessionId = readStringParam(rawParams, "sessionId") ?? null;
+        const sensitivity =
+          (readStringParam(rawParams, "sensitivity") as MemorySensitivity | undefined) ?? "normal";
+        const importance = readNumberParam(rawParams, "importance");
+        const confidence = readNumberParam(rawParams, "confidence");
+        const tags = Array.isArray(rawParams.tags)
+          ? rawParams.tags.filter((value): value is string => typeof value === "string")
+          : [];
+        const metadata =
+          rawParams.metadata &&
+          typeof rawParams.metadata === "object" &&
+          !Array.isArray(rawParams.metadata)
+            ? (rawParams.metadata as Record<string, unknown>)
+            : undefined;
+
+        const memory = await getMemoryManagerContextWithPurpose({
+          cfg,
+          agentId,
+          purpose: "status",
+        });
+        if ("error" in memory) {
+          return jsonResult({
+            stored: false,
+            disabled: true,
+            error: memory.error ?? "memory search unavailable",
+          });
+        }
+
+        const writeConfig = createMemoryWriterConfig(await loadMementoWriteConfig());
+        const dbPath = resolveMementoDbPath(memory.manager.status());
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+        const store = SqliteMemoryWriterStore.open(dbPath);
+        try {
+          const checksum = computeMemoryChecksum(
+            {
+              kind,
+              scope,
+              scope_key: scopeKey,
+              title,
+              content,
+            },
+            writeConfig.remember.checksumFields,
+          );
+          const existingId = store.findActiveMemoryIdByChecksum(checksum);
+          const writer = new MemoryWriter(store, writeConfig);
+          const memoryId = writer.remember({
+            content,
+            title,
+            kind,
+            scope,
+            scopeKey,
+            sessionId,
+            sourceType,
+            sourceRef,
+            tags,
+            importance: importance ?? undefined,
+            confidence: confidence ?? undefined,
+            pinned: rawParams.pinned === true,
+            durable: rawParams.durable === false ? false : undefined,
+            sensitivity,
+            authorType: readStringParam(rawParams, "authorType") ?? "assistant",
+            authorId: readStringParam(rawParams, "authorId") ?? undefined,
+            metadata,
+          });
+          const duplicate = Boolean(existingId);
+          return jsonResult({
+            stored: !duplicate,
+            duplicate,
+            id: memoryId,
+            checksum,
+            scope,
+            scopeKey,
+            kind,
+          });
+        } finally {
+          store.close();
+        }
       },
   });
 }

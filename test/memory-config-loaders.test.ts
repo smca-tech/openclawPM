@@ -46,6 +46,34 @@ describe("memory config loaders", () => {
     await expect(loadRecallPresetsConfig(badPath)).rejects.toThrow();
   });
 
+  it("accepts recall preset bucket objects with filter bundles", async () => {
+    const validPath = writeTempJson({
+      version: "memory-recall-presets-v2",
+      bucket_order: ["pinned"],
+      bucket_bonus: { pinned: 1000 },
+      filter_bundles: {
+        visible: { visibility: "respect_context" },
+      },
+      strategies: {
+        default_pinned: { limit: 2 },
+      },
+      presets: {
+        dm: {
+          bucket_strategies: {
+            pinned: {
+              strategy: "default_pinned",
+              filter_bundles: ["visible"],
+              filters: { limit: 1 },
+            },
+          },
+        },
+      },
+    });
+    await expect(loadRecallPresetsConfig(validPath)).resolves.toMatchObject({
+      filter_bundles: { visible: { visibility: "respect_context" } },
+    });
+  });
+
   it("rejects invalid write config", async () => {
     const badPath = writeTempJson({ version: "bad-write", remember: {} });
     await expect(loadWriteHeuristicsConfig(badPath)).rejects.toThrow();

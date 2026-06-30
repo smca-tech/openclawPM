@@ -347,6 +347,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Memory Get",
       detailKeys: ["path", "from", "lines"],
     },
+    memento_write: {
+      emoji: "📝",
+      title: "Memento Write",
+      detailKeys: ["title", "kind", "scope", "scopeKey"],
+    },
     web_search: {
       emoji: "🔎",
       title: "Web Search",

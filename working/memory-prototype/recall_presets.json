@@ -7,6 +7,17 @@
     "entity": 500,
     "recent": 300
   },
+  "filter_bundles": {
+    "visibility_respect_context": {
+      "visibility": "respect_context"
+    },
+    "visibility_normal_only": {
+      "visibility": "normal_only"
+    },
+    "visibility_all": {
+      "visibility": "all"
+    }
+  },
   "strategies": {
     "default_pinned": {
       "visibility": "respect_context",

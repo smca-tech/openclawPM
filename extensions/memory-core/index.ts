@@ -82,12 +82,54 @@ const MemoryGetSchema = {
   additionalProperties: false,
 } as const satisfies TSchema;
 
+const MementoWriteSchema = {
+  type: "object",
+  properties: {
+    content: { type: "string" },
+    title: { type: "string" },
+    kind: {
+      type: "string",
+      enum: [
+        "fact",
+        "preference",
+        "person",
+        "project",
+        "decision",
+        "instruction",
+        "todo",
+        "summary",
+        "note",
+        "credential_ref",
+      ],
+    },
+    scope: {
+      type: "string",
+      enum: ["global", "user", "session", "project", "chat", "agent"],
+    },
+    scopeKey: { type: "string" },
+    sessionId: { type: "string" },
+    sourceType: { type: "string" },
+    sourceRef: { type: "string" },
+    tags: { type: "array", items: { type: "string" } },
+    importance: { type: "number" },
+    confidence: { type: "number" },
+    pinned: { type: "boolean" },
+    durable: { type: "boolean" },
+    sensitivity: { type: "string", enum: ["normal", "sensitive", "secret"] },
+    authorType: { type: "string" },
+    authorId: { type: "string" },
+    metadata: { type: "object", additionalProperties: true },
+  },
+  required: ["content"],
+  additionalProperties: false,
+} as const satisfies TSchema;
+
 function createLazyMemoryTool(params: {
   options: MemoryToolOptions;
   label: string;
-  name: "memory_search" | "memory_get";
+  name: "memory_search" | "memory_get" | "memento_write";
   description: string;
-  parameters: typeof MemorySearchSchema | typeof MemoryGetSchema;
+  parameters: typeof MemorySearchSchema | typeof MemoryGetSchema | typeof MementoWriteSchema;
   load: (module: MemoryToolsModule, options: MemoryToolOptions) => AnyAgentTool | null;
 }): AnyAgentTool | null {
   if (!hasMemoryToolContext(params.options)) {
@@ -140,6 +182,18 @@ function createLazyMemoryGetTool(options: MemoryToolOptions): AnyAgentTool | nul
       "Safe exact excerpt read from MEMORY.md or memory/*.md. Defaults to a bounded excerpt when lines are omitted, includes truncation/continuation info when more content exists, and `corpus=wiki` reads from registered compiled-wiki supplements.",
     parameters: MemoryGetSchema,
     load: (module, loadOptions) => module.createMemoryGetTool(loadOptions),
+  });
+}
+
+function createLazyMementoWriteTool(options: MemoryToolOptions): AnyAgentTool | null {
+  return createLazyMemoryTool({
+    options,
+    label: "Memento Write",
+    name: "memento_write",
+    description:
+      "Write a structured memory record into the runtime memento store. Use when you need to persist a new fact, preference, decision, note, or todo through the live tool surface.",
+    parameters: MementoWriteSchema,
+    load: (module, loadOptions) => module.createMementoWriteTool(loadOptions),
   });
 }
 
@@ -197,6 +251,10 @@ export default definePluginEntry({
 
     api.registerTool((ctx) => createLazyMemoryGetTool(resolveMemoryToolOptions(ctx)), {
       names: ["memory_get"],
+    });
+
+    api.registerTool((ctx) => createLazyMementoWriteTool(resolveMemoryToolOptions(ctx)), {
+      names: ["memento_write"],
     });
 
     api.registerCommand({

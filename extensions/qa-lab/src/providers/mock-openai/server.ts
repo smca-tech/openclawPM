@@ -2046,6 +2046,20 @@ async function buildResponsesPayload(
       });
     }
   }
+  if (/memento write check/i.test(prompt)) {
+    if (!toolOutput) {
+      return buildToolCallEventsWithArgs("memento_write", {
+        content: "Johnny prefers reversible plugin installs before runtime cutovers.",
+        title: "Plugin install preference",
+        kind: "preference",
+        scope: "user",
+        scopeKey: "johnny",
+        tags: ["plugins", "safety"],
+        importance: 82,
+      });
+    }
+    return buildAssistantEvents("Stored the plugin install preference through memento_write.");
+  }
   if (
     isActiveMemorySubagentPrompt(allInputText) &&
     /silent snack recall check/i.test(allInputText)

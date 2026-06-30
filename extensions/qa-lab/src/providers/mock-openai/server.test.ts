@@ -1526,6 +1526,29 @@ describe("qa mock openai server", () => {
     expect(memorySearch.status).toBe(200);
     expect(await memorySearch.text()).toContain('"name":"memory_search"');
 
+    const mementoWrite = await fetch(`${server.baseUrl}/v1/responses`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        stream: true,
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: "Memento write check: save the reversible plugin install preference through the live memory tool.",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(mementoWrite.status).toBe(200);
+    expect(await mementoWrite.text()).toContain('"name":"memento_write"');
+
     const image = await fetch(`${server.baseUrl}/v1/images/generations`, {
       method: "POST",
       headers: {

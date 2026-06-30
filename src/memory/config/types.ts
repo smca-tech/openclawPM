@@ -58,8 +58,22 @@ export interface RecallPresetsConfig {
   version: string;
   bucket_order: string[];
   bucket_bonus: Record<string, number>;
+  filter_bundles?: Record<string, Record<string, unknown>>;
   strategies: Record<string, Record<string, unknown>>;
-  presets: Record<string, { bucket_strategies: Record<string, string> }>;
+  presets: Record<
+    string,
+    {
+      bucket_strategies: Record<
+        string,
+        | string
+        | {
+            strategy: string;
+            filter_bundles?: string[];
+            filters?: Record<string, unknown>;
+          }
+      >;
+    }
+  >;
 }
 
 export interface WriteHeuristicsConfig {

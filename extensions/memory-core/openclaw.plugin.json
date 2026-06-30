@@ -6,7 +6,7 @@
   "kind": "memory",
   "contracts": {
     "memoryEmbeddingProviders": ["local"],
-    "tools": ["memory_get", "memory_search"]
+    "tools": ["memory_get", "memory_search", "memento_write"]
   },
   "commandAliases": [
     {

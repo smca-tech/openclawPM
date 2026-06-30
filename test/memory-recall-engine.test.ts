@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadRecallPresetsConfig } from "../src/memory/config/loaders.js";
+import type { RecallPresetsConfig } from "../src/memory/config/types.js";
 import { MemoryRecallEngine } from "../src/memory/recall/memory-recall-engine.js";
 import { SqliteMemoryRecallStore } from "../src/memory/store/sqlite-memory-recall-store.js";
 import { SqliteMemoryWriterStore } from "../src/memory/store/sqlite-memory-writer-store.js";
@@ -167,6 +168,51 @@ describe("MemoryRecallEngine", () => {
         )
         .get("recall-session") as { count: number };
       expect(row.count).toBe(result.merged.length);
+    } finally {
+      writerStore.close();
+      recallStore.close();
+    }
+  });
+
+  it("supports preset bucket overrides via filter bundles and inline filters", async () => {
+    const { writerStore, recallStore, recallConfig } = await createRecallFixture();
+    try {
+      const customConfig: RecallPresetsConfig = {
+        ...recallConfig,
+        filter_bundles: {
+          ...(recallConfig.filter_bundles ?? {}),
+          recent_one: { limit: 1 },
+          admin_visible: { visibility: "all" },
+        },
+        presets: {
+          ...recallConfig.presets,
+          group: {
+            bucket_strategies: {
+              ...recallConfig.presets.group.bucket_strategies,
+              pinned: {
+                strategy: "default_pinned",
+                filter_bundles: ["admin_visible"],
+                filters: { limit: 1 },
+              },
+              recent: {
+                strategy: "group_recent",
+                filter_bundles: ["recent_one"],
+              },
+            },
+          },
+        },
+      };
+      const engine = new MemoryRecallEngine(recallStore, customConfig);
+      const group = engine.startupHydrate({
+        sessionId: "recall-session",
+        chatId: "telegram:8241756142",
+        userId: "8241756142",
+        userKey: "johnny",
+        agentKey: "yuki-mori",
+        preset: "group",
+      });
+      expect(group.pinned).toHaveLength(1);
+      expect(group.recent.length).toBeLessThanOrEqual(1);
     } finally {
       writerStore.close();
       recallStore.close();

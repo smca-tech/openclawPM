@@ -38,12 +38,12 @@ function registerMemoryCoreRuntime(): MemoryPluginRuntime {
 }
 
 describe("buildPromptSection", () => {
-  it("returns empty when no memory tools are available", () => {
-    expect(buildPromptSection({ availableTools: new Set() })).toStrictEqual([]);
+  it("returns empty when no memory tools are available", async () => {
+    await expect(buildPromptSection({ availableTools: new Set() })).resolves.toStrictEqual([]);
   });
 
-  it("describes the two-step flow when both memory tools are available", () => {
-    const result = buildPromptSection({
+  it("describes the two-step flow when both memory tools are available", async () => {
+    const result = await buildPromptSection({
       availableTools: new Set(["memory_search", "memory_get"]),
     });
     expect(result[0]).toBe("## Memory Recall");
@@ -56,23 +56,23 @@ describe("buildPromptSection", () => {
     expect(result.at(-1)).toBe("");
   });
 
-  it("limits the guidance to memory_search when only search is available", () => {
-    const result = buildPromptSection({ availableTools: new Set(["memory_search"]) });
+  it("limits the guidance to memory_search when only search is available", async () => {
+    const result = await buildPromptSection({ availableTools: new Set(["memory_search"]) });
     expect(result[0]).toBe("## Memory Recall");
     expect(result[1]).toContain("run memory_search");
     expect(result[1]).toContain("indexed session transcripts");
     expect(result[1]).not.toContain("then use memory_get");
   });
 
-  it("limits the guidance to memory_get when only get is available", () => {
-    const result = buildPromptSection({ availableTools: new Set(["memory_get"]) });
+  it("limits the guidance to memory_get when only get is available", async () => {
+    const result = await buildPromptSection({ availableTools: new Set(["memory_get"]) });
     expect(result[0]).toBe("## Memory Recall");
     expect(result[1]).toContain("run memory_get");
     expect(result[1]).not.toContain("run memory_search");
   });
 
-  it("includes citations-off instruction when citationsMode is off", () => {
-    const result = buildPromptSection({
+  it("includes citations-off instruction when citationsMode is off", async () => {
+    const result = await buildPromptSection({
       availableTools: new Set(["memory_search"]),
       citationsMode: "off",
     });

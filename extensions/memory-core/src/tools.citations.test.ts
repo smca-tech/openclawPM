@@ -6,6 +6,7 @@ import {
 } from "openclaw/plugin-sdk/memory-host-core";
 import { readMemoryHostEvents } from "openclaw/plugin-sdk/memory-host-events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SqliteMemoryWriterStore } from "../../../src/memory/store/sqlite-memory-writer-store.js";
 import {
   getMemorySearchManagerMockCalls,
   getReadAgentMemoryFileMockCalls,
@@ -22,6 +23,7 @@ import {
   createAutoCitationsMemorySearchTool,
   createDefaultMemoryToolConfig,
   createMemoryGetToolOrThrow,
+  createMementoWriteToolOrThrow,
   createMemorySearchToolOrThrow,
   expectUnavailableMemorySearchDetails,
 } from "./tools.test-helpers.js";
@@ -451,5 +453,48 @@ describe("memory tools", () => {
       fromLine: 3,
       lineCount: 5,
     });
+  });
+
+  it("writes a memento record through the live tool surface", async () => {
+    const workspaceDir = await createTempWorkspace("memento-write-");
+    try {
+      setMemoryBackend("builtin");
+      setMemoryWorkspaceDir(workspaceDir);
+      const tool = createMementoWriteToolOrThrow({
+        agentSessionKey: "agent:main:telegram:direct:8241756142",
+      });
+
+      const result = await tool.execute("call_memento_write", {
+        content: "Johnny prefers reversible plugin installs before runtime cutovers.",
+        title: "Plugin install preference",
+        kind: "preference",
+        scope: "user",
+        scopeKey: "johnny",
+        tags: ["plugins", "safety"],
+        importance: 82,
+      });
+
+      expect(result.details).toMatchObject({
+        stored: true,
+        duplicate: false,
+        kind: "preference",
+        scope: "user",
+        scopeKey: "johnny",
+      });
+
+      const dbPath = path.join(workspaceDir, ".memory", "index.sqlite");
+      const store = SqliteMemoryWriterStore.open(dbPath);
+      try {
+        const memoryId = (result.details as { id: string }).id;
+        const saved = store.readForUpdate(memoryId);
+        expect(saved?.title).toBe("Plugin install preference");
+        expect(saved?.content).toContain("reversible plugin installs");
+        expect(saved?.tags).toEqual(["plugins", "safety"]);
+      } finally {
+        store.close();
+      }
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
   });
 });
