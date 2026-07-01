@@ -562,6 +562,7 @@ export function createOpenClawCodingTools(options?: {
     return normalized === "*" || normalized === "message";
   });
   const runtimeProfileAlsoAllow = [
+    ...(options?.runtimeToolAllowlist ?? []),
     ...(options?.forceMessageTool || options?.sourceReplyDeliveryMode === "message_tool_only"
       ? ["message"]
       : []),

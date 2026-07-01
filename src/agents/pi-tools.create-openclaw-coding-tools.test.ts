@@ -377,6 +377,40 @@ describe("createOpenClawCodingTools", () => {
     expectListIncludes(options.pluginToolAllowlist, ["memory_search", "memory_get"]);
   });
 
+  it("preserves runtime-allowed plugin tools through restrictive profiles", () => {
+    const resolvePluginToolsSpy = vi
+      .spyOn(openClawPluginTools, "resolveOpenClawPluginToolsForOptions")
+      .mockReturnValue([
+        {
+          name: "memento_write",
+          description: "Write a memory",
+          parameters: {
+            type: "object",
+            properties: {},
+          },
+        },
+      ]);
+
+    try {
+      const tools = createOpenClawCodingTools({
+        config: { tools: { profile: "coding" } },
+        includeCoreTools: false,
+        runtimeToolAllowlist: ["memento_write"],
+        toolConstructionPlan: {
+          includeBaseCodingTools: false,
+          includeShellTools: false,
+          includeChannelTools: false,
+          includeOpenClawTools: false,
+          includePluginTools: true,
+        },
+      });
+
+      expect(toolNameList(tools)).toContain("memento_write");
+    } finally {
+      resolvePluginToolsSpy.mockRestore();
+    }
+  });
+
   it("preserves runtime-allowed message through restrictive profiles", () => {
     const tools = createOpenClawCodingTools({
       config: { tools: { profile: "minimal" } },
