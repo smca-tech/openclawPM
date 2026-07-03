@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { MemoryReadForUpdate, MemoryRow } from "../types.js";
+import type { MemoryReadForUpdate, MemoryRow, MemorySearchRecord } from "../types.js";
 import type { MemoryWriterStore } from "../write/memory-writer.js";
 import { initializeMemoryDb } from "./memory-db.js";
 
@@ -7,6 +7,23 @@ function parseMetadata(metadataJson: string | null): Record<string, unknown> {
   if (!metadataJson) return {};
   return JSON.parse(metadataJson) as Record<string, unknown>;
 }
+
+function escapeLikePattern(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
+type SearchMemoriesInput = {
+  query?: string;
+  maxResults: number;
+  scope?: string;
+  scopeKey?: string;
+  kind?: string;
+  status?: string;
+  sensitivity?: string;
+  tags?: string[];
+  pinned?: boolean;
+  durable?: boolean;
+};
 
 export class SqliteMemoryWriterStore implements MemoryWriterStore {
   constructor(readonly db: DatabaseSync) {
@@ -26,6 +43,117 @@ export class SqliteMemoryWriterStore implements MemoryWriterStore {
       .prepare(`SELECT id FROM memories WHERE checksum = ? AND status = 'active' LIMIT 1`)
       .get(checksum) as { id: string } | undefined;
     return row?.id ?? null;
+  }
+
+  searchMemories(input: SearchMemoriesInput): MemorySearchRecord[] {
+    const where: string[] = [];
+    const params: Record<string, string | number | null> = {};
+    const scoreParts: string[] = [];
+    const normalizedQuery = input.query?.trim().toLowerCase() ?? "";
+    const terms = [
+      ...new Set(
+        normalizedQuery
+          .split(/\s+/)
+          .map((term) => term.trim())
+          .filter(Boolean),
+      ),
+    ];
+
+    if (input.scope) {
+      where.push("m.scope = @scope");
+      params.scope = input.scope;
+    }
+    if (input.scopeKey) {
+      where.push("m.scope_key = @scopeKey");
+      params.scopeKey = input.scopeKey;
+    }
+    if (input.kind) {
+      where.push("m.kind = @kind");
+      params.kind = input.kind;
+    }
+    if (input.status) {
+      where.push("m.status = @status");
+      params.status = input.status;
+    } else {
+      where.push("m.status = 'active'");
+    }
+    if (input.sensitivity) {
+      where.push("m.sensitivity = @sensitivity");
+      params.sensitivity = input.sensitivity;
+    }
+    if (input.pinned != null) {
+      where.push("m.pinned = @pinned");
+      params.pinned = input.pinned ? 1 : 0;
+    }
+    if (input.durable != null) {
+      where.push("m.durable = @durable");
+      params.durable = input.durable ? 1 : 0;
+    }
+
+    for (const [index, tag] of (input.tags ?? []).entries()) {
+      const key = `tag${index}`;
+      where.push(
+        `EXISTS (SELECT 1 FROM memory_tags mt WHERE mt.memory_id = m.id AND mt.tag = @${key})`,
+      );
+      params[key] = tag;
+    }
+
+    if (normalizedQuery) {
+      const phrasePattern = `%${escapeLikePattern(normalizedQuery)}%`;
+      params.queryPhrase = phrasePattern;
+      scoreParts.push(
+        "CASE WHEN lower(coalesce(m.title, '')) LIKE @queryPhrase ESCAPE '\\' THEN 12 ELSE 0 END",
+        "CASE WHEN lower(coalesce(m.summary, '')) LIKE @queryPhrase ESCAPE '\\' THEN 8 ELSE 0 END",
+        "CASE WHEN lower(m.content) LIKE @queryPhrase ESCAPE '\\' THEN 5 ELSE 0 END",
+      );
+
+      for (const [index, term] of terms.entries()) {
+        const paramKey = `term${index}`;
+        const pattern = `%${escapeLikePattern(term)}%`;
+        params[paramKey] = pattern;
+        where.push(
+          `(lower(coalesce(m.title, '')) LIKE @${paramKey} ESCAPE '\\' OR lower(coalesce(m.summary, '')) LIKE @${paramKey} ESCAPE '\\' OR lower(m.content) LIKE @${paramKey} ESCAPE '\\')`,
+        );
+        scoreParts.push(
+          `CASE WHEN lower(coalesce(m.title, '')) LIKE @${paramKey} ESCAPE '\\' THEN 4 ELSE 0 END`,
+          `CASE WHEN lower(coalesce(m.summary, '')) LIKE @${paramKey} ESCAPE '\\' THEN 2 ELSE 0 END`,
+          `CASE WHEN lower(m.content) LIKE @${paramKey} ESCAPE '\\' THEN 1 ELSE 0 END`,
+        );
+      }
+    }
+
+    const scoreExpr = scoreParts.length > 0 ? scoreParts.join(" + ") : "0";
+    const sql = `
+      SELECT
+        m.*,
+        (${scoreExpr}) AS match_score
+      FROM memories m
+      ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY match_score DESC, m.pinned DESC, m.importance DESC, m.updated_at DESC, m.id ASC
+      LIMIT @limit
+    `;
+
+    params.limit = input.maxResults;
+    const rows = this.db.prepare(sql).all(params) as Array<MemoryRow & { match_score: number }>;
+
+    const tagsStmt = this.db.prepare(
+      "SELECT tag FROM memory_tags WHERE memory_id = ? ORDER BY tag",
+    );
+    const mentionsStmt = this.db.prepare(
+      "SELECT entity_type, entity_key, role FROM memory_mentions WHERE memory_id = ? ORDER BY entity_type, entity_key, role",
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      metadata: parseMetadata(row.metadata_json),
+      tags: (tagsStmt.all(row.id) as Array<{ tag: string }>).map((tagRow) => tagRow.tag),
+      mentions: mentionsStmt.all(row.id) as Array<{
+        entity_type: string;
+        entity_key: string;
+        role: string | null;
+      }>,
+      match_score: Number(row.match_score ?? 0),
+    }));
   }
 
   memoryIdExists(memoryId: string): boolean {

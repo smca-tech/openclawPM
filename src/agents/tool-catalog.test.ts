@@ -33,6 +33,7 @@ describe("tool-catalog", () => {
       "x_search",
       "memory_search",
       "memory_get",
+      "memento_search",
       "sessions_list",
       "sessions_history",
       "sessions_send",

@@ -352,6 +352,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Memento Write",
       detailKeys: ["title", "kind", "scope", "scopeKey"],
     },
+    memento_search: {
+      emoji: "🗂️",
+      title: "Memento Search",
+      detailKeys: ["query", "scope", "scopeKey", "kind", "status"],
+    },
     web_search: {
       emoji: "🔎",
       title: "Web Search",

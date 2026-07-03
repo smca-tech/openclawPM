@@ -25,6 +25,7 @@ import {
   type MemorySensitivity,
   type MemoryScope,
   type MemoryKind,
+  type MemoryStatus,
 } from "../../../src/memory/types.js";
 import { computeMemoryChecksum, MemoryWriter } from "../../../src/memory/write/memory-writer.js";
 import { filterMemorySearchHitsBySessionVisibility } from "./session-search-visibility.js";
@@ -93,6 +94,51 @@ const MementoWriteSchema = Type.Object({
   authorType: Type.Optional(Type.String()),
   authorId: Type.Optional(Type.String()),
   metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+});
+
+const MementoSearchSchema = Type.Object({
+  query: Type.Optional(Type.String()),
+  maxResults: Type.Optional(Type.Number()),
+  scope: Type.Optional(
+    Type.Union([
+      Type.Literal("global"),
+      Type.Literal("user"),
+      Type.Literal("session"),
+      Type.Literal("project"),
+      Type.Literal("chat"),
+      Type.Literal("agent"),
+    ]),
+  ),
+  scopeKey: Type.Optional(Type.String()),
+  kind: Type.Optional(
+    Type.Union([
+      Type.Literal("fact"),
+      Type.Literal("preference"),
+      Type.Literal("person"),
+      Type.Literal("project"),
+      Type.Literal("decision"),
+      Type.Literal("instruction"),
+      Type.Literal("todo"),
+      Type.Literal("summary"),
+      Type.Literal("note"),
+      Type.Literal("credential_ref"),
+    ]),
+  ),
+  status: Type.Optional(
+    Type.Union([
+      Type.Literal("active"),
+      Type.Literal("archived"),
+      Type.Literal("deleted"),
+      Type.Literal("superseded"),
+      Type.Literal("tentative"),
+    ]),
+  ),
+  sensitivity: Type.Optional(
+    Type.Union([Type.Literal("normal"), Type.Literal("sensitive"), Type.Literal("secret")]),
+  ),
+  tags: Type.Optional(Type.Array(Type.String())),
+  pinned: Type.Optional(Type.Boolean()),
+  durable: Type.Optional(Type.Boolean()),
 });
 
 type LoadedWriteConfig = Awaited<ReturnType<typeof loadWriteHeuristicsConfig>>;
@@ -710,6 +756,116 @@ export function createMementoWriteTool(options: {
             scope,
             scopeKey,
             kind,
+          });
+        } finally {
+          store.close();
+        }
+      },
+  });
+}
+
+export function createMementoSearchTool(options: {
+  config?: OpenClawConfig;
+  getConfig?: () => OpenClawConfig | undefined;
+  agentId?: string;
+  agentSessionKey?: string;
+}) {
+  return createMemoryTool({
+    options,
+    label: "Memento Search",
+    name: "memento_search",
+    description:
+      "Search structured memory records in the runtime memento store. Use this to inspect stored memory rows by query, scope, kind, tags, or status without reading raw SQLite directly.",
+    parameters: MementoSearchSchema,
+    execute:
+      ({ cfg, agentId }) =>
+      async (_toolCallId, params) => {
+        const rawParams = asToolParamsRecord(params);
+        const query = readStringParam(rawParams, "query")?.trim() ?? "";
+        const maxResults = Math.max(
+          1,
+          Math.min(50, readNumberParam(rawParams, "maxResults", { integer: true }) ?? 10),
+        );
+        const scope = readStringParam(rawParams, "scope") as MemoryScope | undefined;
+        const scopeKey = readStringParam(rawParams, "scopeKey") ?? undefined;
+        const kind = readStringParam(rawParams, "kind") as MemoryKind | undefined;
+        const status = readStringParam(rawParams, "status") as MemoryStatus | undefined;
+        const sensitivity = readStringParam(rawParams, "sensitivity") as
+          | MemorySensitivity
+          | undefined;
+        const tags = Array.isArray(rawParams.tags)
+          ? rawParams.tags.filter(
+              (value): value is string => typeof value === "string" && value.trim().length > 0,
+            )
+          : [];
+        const pinned = typeof rawParams.pinned === "boolean" ? rawParams.pinned : undefined;
+        const durable = typeof rawParams.durable === "boolean" ? rawParams.durable : undefined;
+
+        const memory = await getMemoryManagerContextWithPurpose({
+          cfg,
+          agentId,
+          purpose: "status",
+        });
+        if ("error" in memory) {
+          return jsonResult({
+            results: [],
+            disabled: true,
+            error: memory.error ?? "memory search unavailable",
+          });
+        }
+
+        const dbPath = resolveMementoDbPath(memory.manager.status());
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+        const store = SqliteMemoryWriterStore.open(dbPath);
+        try {
+          const results = store.searchMemories({
+            query: query || undefined,
+            maxResults,
+            scope,
+            scopeKey,
+            kind,
+            status,
+            sensitivity,
+            tags,
+            pinned,
+            durable,
+          });
+          return jsonResult({
+            results: results.map((record) => ({
+              id: record.id,
+              title: record.title,
+              summary: record.summary,
+              kind: record.kind,
+              status: record.status,
+              scope: record.scope,
+              scopeKey: record.scope_key,
+              sensitivity: record.sensitivity,
+              importance: record.importance,
+              confidence: record.confidence,
+              pinned: Boolean(record.pinned),
+              durable: Boolean(record.durable),
+              matchScore: record.match_score,
+              tags: record.tags,
+              mentions: record.mentions,
+              sourceType: record.source_type,
+              sourceRef: record.source_ref,
+              sessionId: record.session_id,
+              parentMemoryId: record.parent_memory_id,
+              createdAt: record.created_at,
+              updatedAt: record.updated_at,
+            })),
+            filters: {
+              query: query || undefined,
+              maxResults,
+              scope,
+              scopeKey,
+              kind,
+              status: status ?? "active",
+              sensitivity,
+              tags,
+              pinned,
+              durable,
+            },
           });
         } finally {
           store.close();

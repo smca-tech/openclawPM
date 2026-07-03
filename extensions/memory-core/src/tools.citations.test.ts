@@ -23,6 +23,7 @@ import {
   createAutoCitationsMemorySearchTool,
   createDefaultMemoryToolConfig,
   createMemoryGetToolOrThrow,
+  createMementoSearchToolOrThrow,
   createMementoWriteToolOrThrow,
   createMemorySearchToolOrThrow,
   expectUnavailableMemorySearchDetails,
@@ -493,6 +494,79 @@ describe("memory tools", () => {
       } finally {
         store.close();
       }
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("searches structured memento records through the live tool surface", async () => {
+    const workspaceDir = await createTempWorkspace("memento-search-");
+    try {
+      setMemoryBackend("builtin");
+      setMemoryWorkspaceDir(workspaceDir);
+
+      const writeTool = createMementoWriteToolOrThrow({
+        agentSessionKey: "agent:main:telegram:direct:8241756142",
+      });
+      await writeTool.execute("call_memento_write_pref", {
+        content: "Johnny wants reversible plugin installs before runtime cutovers.",
+        title: "Plugin install preference",
+        kind: "preference",
+        scope: "user",
+        scopeKey: "johnny",
+        tags: ["plugins", "safety"],
+        importance: 82,
+      });
+      await writeTool.execute("call_memento_write_project", {
+        content: "openclawPM cutover failed and recovered from snapshot restore.",
+        title: "openclawPM cutover recovery",
+        kind: "project",
+        scope: "project",
+        scopeKey: "openclawPM",
+        tags: ["cutover", "recovery"],
+        importance: 88,
+      });
+
+      const searchTool = createMementoSearchToolOrThrow({
+        agentSessionKey: "agent:main:telegram:direct:8241756142",
+      });
+      const result = await searchTool.execute("call_memento_search", {
+        query: "cutover snapshot",
+        scope: "project",
+        scopeKey: "openclawPM",
+        kind: "project",
+        tags: ["recovery"],
+      });
+
+      expect(result.details).toMatchObject({
+        filters: {
+          query: "cutover snapshot",
+          scope: "project",
+          scopeKey: "openclawPM",
+          kind: "project",
+          status: "active",
+          tags: ["recovery"],
+        },
+      });
+      const details = result.details as {
+        results: Array<{
+          title: string;
+          scope: string;
+          scopeKey: string | null;
+          kind: string;
+          tags: string[];
+          matchScore: number;
+        }>;
+      };
+      expect(details.results).toHaveLength(1);
+      expect(details.results[0]).toMatchObject({
+        title: "openclawPM cutover recovery",
+        scope: "project",
+        scopeKey: "openclawPM",
+        kind: "project",
+        tags: ["cutover", "recovery"],
+      });
+      expect(details.results[0].matchScore).toBeGreaterThan(0);
     } finally {
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }

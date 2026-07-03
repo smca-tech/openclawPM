@@ -124,12 +124,53 @@ const MementoWriteSchema = {
   additionalProperties: false,
 } as const satisfies TSchema;
 
+const MementoSearchSchema = {
+  type: "object",
+  properties: {
+    query: { type: "string" },
+    maxResults: { type: "number" },
+    scope: {
+      type: "string",
+      enum: ["global", "user", "session", "project", "chat", "agent"],
+    },
+    scopeKey: { type: "string" },
+    kind: {
+      type: "string",
+      enum: [
+        "fact",
+        "preference",
+        "person",
+        "project",
+        "decision",
+        "instruction",
+        "todo",
+        "summary",
+        "note",
+        "credential_ref",
+      ],
+    },
+    status: {
+      type: "string",
+      enum: ["active", "archived", "deleted", "superseded", "tentative"],
+    },
+    sensitivity: { type: "string", enum: ["normal", "sensitive", "secret"] },
+    tags: { type: "array", items: { type: "string" } },
+    pinned: { type: "boolean" },
+    durable: { type: "boolean" },
+  },
+  additionalProperties: false,
+} as const satisfies TSchema;
+
 function createLazyMemoryTool(params: {
   options: MemoryToolOptions;
   label: string;
-  name: "memory_search" | "memory_get" | "memento_write";
+  name: "memory_search" | "memory_get" | "memento_write" | "memento_search";
   description: string;
-  parameters: typeof MemorySearchSchema | typeof MemoryGetSchema | typeof MementoWriteSchema;
+  parameters:
+    | typeof MemorySearchSchema
+    | typeof MemoryGetSchema
+    | typeof MementoWriteSchema
+    | typeof MementoSearchSchema;
   load: (module: MemoryToolsModule, options: MemoryToolOptions) => AnyAgentTool | null;
 }): AnyAgentTool | null {
   if (!hasMemoryToolContext(params.options)) {
@@ -197,6 +238,18 @@ function createLazyMementoWriteTool(options: MemoryToolOptions): AnyAgentTool | 
   });
 }
 
+function createLazyMementoSearchTool(options: MemoryToolOptions): AnyAgentTool | null {
+  return createLazyMemoryTool({
+    options,
+    label: "Memento Search",
+    name: "memento_search",
+    description:
+      "Search structured memory records in the runtime memento store by query, scope, kind, tags, or status. Use this to inspect stored memory rows without reading raw SQLite directly.",
+    parameters: MementoSearchSchema,
+    load: (module, loadOptions) => module.createMementoSearchTool(loadOptions),
+  });
+}
+
 function resolveMemoryToolOptions(ctx: OpenClawPluginToolContext): MemoryToolOptions {
   const getConfig = () => ctx.getRuntimeConfig?.() ?? ctx.runtimeConfig ?? ctx.config;
   return {
@@ -255,6 +308,10 @@ export default definePluginEntry({
 
     api.registerTool((ctx) => createLazyMementoWriteTool(resolveMemoryToolOptions(ctx)), {
       names: ["memento_write"],
+    });
+
+    api.registerTool((ctx) => createLazyMementoSearchTool(resolveMemoryToolOptions(ctx)), {
+      names: ["memento_search"],
     });
 
     api.registerCommand({

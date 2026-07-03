@@ -95,6 +95,17 @@ export interface MemoryReadForUpdate extends MemoryRow {
   }>;
 }
 
+export interface MemorySearchRecord extends MemoryRow {
+  metadata: MemoryMetadata;
+  tags: string[];
+  mentions: Array<{
+    entity_type: string;
+    entity_key: string;
+    role: string | null;
+  }>;
+  match_score: number;
+}
+
 export interface RememberMemoryInput {
   content: string;
   title?: string | null;
